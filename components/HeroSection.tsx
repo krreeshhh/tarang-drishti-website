@@ -203,31 +203,6 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ viewerRef: externalVie
                   </button>
                 </div>
 
-                {/* Bottom Center: Dual-Band Selector Buttons */}
-                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 bg-white/95 backdrop-blur-md border border-borderdark p-1.5 flex items-center gap-1 shadow-md">
-                  <button
-                    id="btn-band-all"
-                    onClick={() => handleBandSwitch('all')}
-                    className={`btn-tech text-xs py-1 px-3 ${activeBand === 'all' ? 'btn-tech-active' : ''}`}
-                  >
-                    DUAL-BAND
-                  </button>
-                  <button
-                    id="btn-band-uhf"
-                    onClick={() => handleBandSwitch('uhf')}
-                    className={`btn-tech text-xs py-1 px-3 ${activeBand === 'uhf' ? 'btn-tech-active' : ''}`}
-                  >
-                    UHF • 433 MHz
-                  </button>
-                  <button
-                    id="btn-band-lband"
-                    onClick={() => handleBandSwitch('lband')}
-                    className={`btn-tech text-xs py-1 px-3 ${activeBand === 'lband' ? 'btn-tech-active' : ''}`}
-                  >
-                    L-BAND • 1.5 GHz
-                  </button>
-                </div>
-
                 {/* RF Path Status Toast */}
                 {rfPathStatus && (
                   <div
