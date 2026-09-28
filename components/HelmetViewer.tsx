@@ -157,13 +157,11 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
       setCurrentExploded(exploded);
       const layers = layersRef.current;
 
-      // Cancel any previous in-flight explode animation
       if (explodeAnimIdRef.current) {
         cancelAnimationFrame(explodeAnimIdRef.current);
         explodeAnimIdRef.current = null;
       }
 
-      // Proportional vertical separation offsets for antenna layers ONLY
       const targetOffsets: { [key: string]: number } = exploded
         ? {
             lamination: 0.45,
@@ -268,13 +266,11 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
     };
 
     const handleResetView = useCallback(() => {
-      // 1. Cancel in-flight explosion animation
       if (explodeAnimIdRef.current) {
         cancelAnimationFrame(explodeAnimIdRef.current);
         explodeAnimIdRef.current = null;
       }
 
-      // 2. Snap only antenna layer offsets back to 0 (completely flush on helmet)
       const layers = layersRef.current;
       ANTENNA_LAYER_KEYS.forEach((key) => {
         if (layers[key]) {
@@ -285,10 +281,8 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
       isExplodedRef.current = false;
       setCurrentExploded(false);
 
-      // 3. Reset band states
       handleSetBand('all');
 
-      // 4. Animate camera to default vantage point
       animateCameraTo(2.8, 3.2, 3.2, 1.6);
       if (controlsRef.current) {
         controlsRef.current.target.set(0, 1.6, 0);
@@ -331,7 +325,7 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
       scene.background = new THREE.Color(0xffffff);
       sceneRef.current = scene;
 
-      // 2. Camera setup
+      // 2. Camera setup (elevated 3/4 front view showcasing the front-facing UHF band)
       const camera = new THREE.PerspectiveCamera(38, width / height, 0.1, 100);
       camera.position.set(2.8, 3.2, 3.2);
       cameraRef.current = camera;
@@ -431,12 +425,12 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
       });
       controlsRef.current = controls;
 
-      // 6. Helmet Group & Top Crown Conformal Antenna Assembly
+      // 6. Helmet Group & Rotated Conformal Antenna Assembly (UHF facing front +Z, L-Band at rear -Z)
       const helmetGroup = new THREE.Group();
       helmetGroupRef.current = helmetGroup;
       scene.add(helmetGroup);
 
-      // Mathematical crown height fallback function
+      // Mathematical crown height formula
       const getCrownY = (x: number, z: number, layerOffset: number = 0) => {
         const x2 = x * x;
         const z2 = z * z;
@@ -480,14 +474,14 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
       const antennaGroup = new THREE.Group();
       antennaGroup.name = 'conformalAntenna';
 
-      // Layer 1: AMC Ground Plane (Flush on top dome, offset = 0.005)
+      // Layer 1: AMC Ground Plane (Aligned along Z from -0.56 to +0.56, offset = 0.005)
       const amcMat = new THREE.MeshStandardMaterial({
         color: 0x1e293b,
         metalness: 0.85,
         roughness: 0.3,
         side: THREE.DoubleSide,
       });
-      const amcGeo = createConformalPlane(-0.55, 0.55, -0.28, 0.24, 28, 16, 0.005);
+      const amcGeo = createConformalPlane(-0.26, 0.26, -0.56, 0.56, 16, 28, 0.005);
       const amcMesh = new THREE.Mesh(amcGeo, amcMat);
       amcMesh.castShadow = true;
       layersRef.current['amc'] = amcMesh;
@@ -512,13 +506,13 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
         opacity: 0.72,
         side: THREE.DoubleSide,
       });
-      const rogersGeo = createConformalPlane(-0.53, 0.53, -0.26, 0.22, 28, 16, 0.010);
+      const rogersGeo = createConformalPlane(-0.24, 0.24, -0.54, 0.54, 16, 28, 0.010);
       const rogersMesh = new THREE.Mesh(rogersGeo, rogersMat);
       rogersMesh.castShadow = true;
       layersRef.current['rogers'] = rogersMesh;
       antennaGroup.add(rogersMesh);
 
-      // Layer 3: CST Antenna Layout Matching User Image 2
+      // Layer 3: CST Antenna Layout with 90° rotation (UHF element facing front +Z)
       const cstPlaneMat = new THREE.MeshStandardMaterial({
         color: 0xffffff,
         metalness: 0.3,
@@ -535,6 +529,9 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
         (tex) => {
           tex.wrapS = THREE.ClampToEdgeWrapping;
           tex.wrapT = THREE.ClampToEdgeWrapping;
+          // Rotate texture 90° so the UHF element faces the front (+Z) of the helmet
+          tex.center.set(0.5, 0.5);
+          tex.rotation = Math.PI / 2;
           cstPlaneMat.map = tex;
           cstPlaneMat.needsUpdate = true;
         },
@@ -544,13 +541,13 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
         }
       );
 
-      const cstBoardGeo = createConformalPlane(-0.51, 0.51, -0.24, 0.20, 28, 16, 0.014);
+      const cstBoardGeo = createConformalPlane(-0.22, 0.22, -0.52, 0.52, 16, 28, 0.014);
       const cstBoardMesh = new THREE.Mesh(cstBoardGeo, cstPlaneMat);
       cstBoardMesh.castShadow = true;
       layersRef.current['cstPlane'] = cstBoardMesh;
       antennaGroup.add(cstBoardMesh);
 
-      // 3A. Left Element: Horizontal Metallic Copper Strip (UHF PIFA, 433 MHz)
+      // 3A. FRONT Element: Horizontal Rectangular UHF PIFA (433 MHz) facing FRONT (+Z)
       const uhfMat = new THREE.MeshStandardMaterial({
         color: 0xb45309,
         metalness: 0.95,
@@ -559,13 +556,13 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
         emissiveIntensity: 0.2,
         side: THREE.DoubleSide,
       });
-      const uhfGeo = createConformalPlane(-0.46, -0.06, -0.065, 0.065, 18, 10, 0.017);
+      const uhfGeo = createConformalPlane(-0.065, 0.065, 0.08, 0.48, 10, 18, 0.017);
       const uhfMesh = new THREE.Mesh(uhfGeo, uhfMat);
       uhfMesh.castShadow = true;
       layersRef.current['uhf'] = uhfMesh;
       antennaGroup.add(uhfMesh);
 
-      // 3B. Right Element: Vertical Metallic Copper Patch (L-Band, 1.51 GHz)
+      // 3B. REAR Element: Vertical Rectangular L-Band Patch (1.51 GHz) facing REAR (-Z)
       const lbandMat = new THREE.MeshStandardMaterial({
         color: 0xca8a04,
         metalness: 0.95,
@@ -574,25 +571,25 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
         emissiveIntensity: 0.2,
         side: THREE.DoubleSide,
       });
-      const lbandGeo = createConformalPlane(0.14, 0.44, -0.18, 0.18, 18, 18, 0.017);
+      const lbandGeo = createConformalPlane(-0.18, 0.18, -0.46, -0.14, 18, 18, 0.017);
       const lbandMesh = new THREE.Mesh(lbandGeo, lbandMat);
       lbandMesh.castShadow = true;
       layersRef.current['lband'] = lbandMesh;
       antennaGroup.add(lbandMesh);
 
-      // 3C. Center Microstrip Feedline & Lumped SMD Matching Network
+      // 3C. Center Microstrip Feedline & Lumped SMD Matching Network along Z
       const feedMat = new THREE.MeshStandardMaterial({
         color: 0xd97706,
         metalness: 0.9,
         roughness: 0.2,
         side: THREE.DoubleSide,
       });
-      const feedGeo = createConformalPlane(-0.06, 0.14, -0.010, 0.010, 8, 4, 0.017);
+      const feedGeo = createConformalPlane(-0.010, 0.010, -0.14, 0.08, 4, 8, 0.017);
       const feedMesh = new THREE.Mesh(feedGeo, feedMat);
       feedMesh.castShadow = true;
 
       const smdMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.8, roughness: 0.25 });
-      const smdGeo = createConformalPlane(-0.012, 0.040, -0.020, 0.020, 4, 4, 0.020);
+      const smdGeo = createConformalPlane(-0.020, 0.020, -0.040, 0.012, 4, 4, 0.020);
       const smdMesh = new THREE.Mesh(smdGeo, smdMat);
 
       const feedGroup = new THREE.Group();
@@ -610,7 +607,7 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
         opacity: 0.26,
         side: THREE.DoubleSide,
       });
-      const lamGeo = createConformalPlane(-0.55, 0.55, -0.28, 0.24, 28, 16, 0.022);
+      const lamGeo = createConformalPlane(-0.26, 0.26, -0.56, 0.56, 16, 28, 0.022);
       const lamMesh = new THREE.Mesh(lamGeo, lamMat);
       layersRef.current['lamination'] = lamMesh;
       antennaGroup.add(lamMesh);
@@ -618,14 +615,15 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
       helmetGroup.add(antennaGroup);
 
       // 7. Rear Coaxial Feed Cable & Breakaway Connector
+      // Originates directly at the rear of the L-band substrate (-Z) and curves down the rear spine
       const coaxPoints = [
-        new THREE.Vector3(0, 2.62, -0.28),
-        new THREE.Vector3(0, 2.56, -0.55),
-        new THREE.Vector3(0, 2.42, -0.85),
-        new THREE.Vector3(0, 2.15, -1.08),
-        new THREE.Vector3(0, 1.75, -1.24),
-        new THREE.Vector3(0, 1.25, -1.34),
-        new THREE.Vector3(0, 0.95, -1.36),
+        new THREE.Vector3(0, 2.60, -0.54),
+        new THREE.Vector3(0, 2.50, -0.75),
+        new THREE.Vector3(0, 2.36, -0.95),
+        new THREE.Vector3(0, 2.08, -1.12),
+        new THREE.Vector3(0, 1.65, -1.26),
+        new THREE.Vector3(0, 1.18, -1.34),
+        new THREE.Vector3(0, 0.92, -1.36),
       ];
       const coaxCurve = new THREE.CatmullRomCurve3(coaxPoints);
       coaxCurveRef.current = coaxCurve;
@@ -774,7 +772,7 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
             }
           });
 
-          // Conform all antenna layers directly to helmet shell surface
+          // Conform all rotated antenna layers directly to helmet shell surface
           conformGeometryToHelmet(amcGeo, model, 0.005);
           conformGeometryToHelmet(rogersGeo, model, 0.010);
           conformGeometryToHelmet(cstBoardGeo, model, 0.014);
@@ -891,7 +889,7 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
                       : 'bg-white/80 border-slate-200 text-slate-400'
                   }`}
                 >
-                  UHF: 433 MHz {currentBand === 'uhf' || currentBand === 'all' ? '● TX/RX' : '○ STBY'}
+                  UHF: 433 MHz (Front) {currentBand === 'uhf' || currentBand === 'all' ? '● TX/RX' : '○ STBY'}
                 </div>
                 <div
                   className={`px-2 py-0.5 border text-xs font-bold transition-all ${
@@ -900,7 +898,7 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
                       : 'bg-white/80 border-slate-200 text-slate-400'
                   }`}
                 >
-                  L-BAND: 1.51 GHz {currentBand === 'lband' || currentBand === 'all' ? '● TX/RX' : '○ STBY'}
+                  L-BAND: 1.51 GHz (Rear) {currentBand === 'lband' || currentBand === 'all' ? '● TX/RX' : '○ STBY'}
                 </div>
               </div>
 
