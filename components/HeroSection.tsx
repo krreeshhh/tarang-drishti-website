@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef } from 'react';
-import { RotateCcw, ShieldCheck } from 'lucide-react';
+import { RotateCcw, ShieldCheck, Layers, Zap } from 'lucide-react';
 import { HelmetViewer, HelmetViewerHandle } from './HelmetViewer';
 
 interface HeroSectionProps {
@@ -13,6 +13,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ viewerRef: externalVie
   const viewerRef = externalViewerRef || internalViewerRef;
 
   const [activeBand, setActiveBand] = useState<'all' | 'uhf' | 'lband'>('all');
+  const [isExploded, setIsExploded] = useState<boolean>(false);
   const [rfPathStatus, setRfPathStatus] = useState<string | null>(null);
 
   const handleBandSwitch = (band: 'all' | 'uhf' | 'lband') => {
@@ -22,8 +23,28 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ viewerRef: externalVie
     }
   };
 
+  const handleToggleExploded = () => {
+    const next = !isExploded;
+    setIsExploded(next);
+    if (viewerRef.current) {
+      viewerRef.current.setExploded(next);
+    }
+  };
+
+  const handleRFTrace = () => {
+    setRfPathStatus('TRACE ACTIVE: Tracing RF excitation from Nape Connector to Crown Patch Array...');
+    if (viewerRef.current) {
+      viewerRef.current.startRFTrace(() => {
+        setRfPathStatus('RF EXCITATION COMPLETE: Radiation Phase Center Locked on Crown Array');
+        setTimeout(() => setRfPathStatus(null), 3500);
+      });
+    }
+  };
+
   const handleReset = () => {
     setActiveBand('all');
+    setIsExploded(false);
+    setRfPathStatus(null);
     if (viewerRef.current) {
       viewerRef.current.resetView();
     }
@@ -146,7 +167,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ viewerRef: externalVie
               </div>
 
               {/* 3D Canvas Viewport */}
-              <div className="relative w-full overflow-hidden" id="canvas-wrapper" style={{ height: '540px', minHeight: '480px' }}>
+              <div className="relative w-full overflow-hidden" id="canvas-wrapper" style={{ height: '520px', minHeight: '460px' }}>
                 <HelmetViewer
                   ref={viewerRef}
                   activeBand={activeBand}
@@ -196,7 +217,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ viewerRef: externalVie
                     id="btn-reset-view"
                     onClick={handleReset}
                     className="btn-tech text-[11px] py-1.5 px-2.5 bg-white/95"
-                    title="Reset Camera View"
+                    title="Reset Camera View & Collapse Layers"
                   >
                     <RotateCcw className="w-3.5 h-3.5" />
                     <span className="hidden sm:inline">RESET</span>
@@ -207,11 +228,79 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ viewerRef: externalVie
                 {rfPathStatus && (
                   <div
                     id="rf-path-status"
-                    className="absolute bottom-16 left-4 right-4 bg-charcoal text-white font-mono text-[11px] p-2.5 border-l-4 border-sky-400 z-30 shadow-lg animate-pulse"
+                    className="absolute bottom-4 left-4 right-4 bg-charcoal text-white font-mono text-[11px] p-2.5 border-l-4 border-sky-400 z-30 shadow-lg animate-pulse"
                   >
                     {rfPathStatus}
                   </div>
                 )}
+              </div>
+
+              {/* Interactive Simulation Controls Bar below 3D canvas */}
+              <div className="p-3 bg-slate-50 border-t border-borderlight flex flex-wrap items-center justify-between gap-2.5 font-mono text-xs">
+                {/* Left Controls: Separate Layers & Trace RF */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    id="btn-separate-layers"
+                    onClick={handleToggleExploded}
+                    className={`btn-tech flex items-center gap-1.5 text-xs font-bold transition-all ${
+                      isExploded
+                        ? 'bg-amber-500 text-white border-amber-600 shadow-sm hover:bg-amber-600'
+                        : 'bg-white hover:bg-slate-100 text-charcoal border-borderdark'
+                    }`}
+                    title="Separate the multi-layer conformal antenna stack in 3D"
+                  >
+                    <Layers className="w-3.5 h-3.5 text-sky-600" />
+                    <span>{isExploded ? 'ASSEMBLE LAYERS (FLUSH)' : 'SEPARATE ANTENNA LAYERS'}</span>
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-normal ${isExploded ? 'bg-amber-700 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                      {isExploded ? 'EXPLODED' : 'STACK'}
+                    </span>
+                  </button>
+
+                  <button
+                    id="btn-trace-rf"
+                    onClick={handleRFTrace}
+                    className="btn-tech bg-white hover:bg-slate-100 text-xs flex items-center gap-1.5"
+                    title="Simulate RF excitation wave propagation from coaxial cable to crown antenna"
+                  >
+                    <Zap className="w-3.5 h-3.5 text-amber-500" />
+                    <span>TRACE RF FEED</span>
+                  </button>
+                </div>
+
+                {/* Right Controls: Frequency Band Selector */}
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] text-slate-400 mr-1 hidden sm:inline">BAND:</span>
+                  <button
+                    onClick={() => handleBandSwitch('all')}
+                    className={`px-2.5 py-1 text-[11px] font-semibold border transition-all ${
+                      activeBand === 'all'
+                        ? 'bg-charcoal text-white border-charcoal shadow-sm'
+                        : 'bg-white text-slate-600 border-borderlight hover:border-slate-400'
+                    }`}
+                  >
+                    DUAL
+                  </button>
+                  <button
+                    onClick={() => handleBandSwitch('uhf')}
+                    className={`px-2.5 py-1 text-[11px] font-semibold border transition-all ${
+                      activeBand === 'uhf'
+                        ? 'bg-indigo-600 text-white border-indigo-700 shadow-sm'
+                        : 'bg-white text-slate-600 border-borderlight hover:border-slate-400'
+                    }`}
+                  >
+                    UHF (433M)
+                  </button>
+                  <button
+                    onClick={() => handleBandSwitch('lband')}
+                    className={`px-2.5 py-1 text-[11px] font-semibold border transition-all ${
+                      activeBand === 'lband'
+                        ? 'bg-sky-600 text-white border-sky-700 shadow-sm'
+                        : 'bg-white text-slate-600 border-borderlight hover:border-slate-400'
+                    }`}
+                  >
+                    L-BAND (1.51G)
+                  </button>
+                </div>
               </div>
 
               {/* Canvas Technical Footer Bar */}
