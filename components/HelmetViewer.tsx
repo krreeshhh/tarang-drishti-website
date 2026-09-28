@@ -31,6 +31,8 @@ const isWebGLSupported = () => {
   }
 };
 
+const ANTENNA_LAYER_KEYS = ['lamination', 'cstPlane', 'uhf', 'lband', 'feed', 'rogers', 'amc'] as const;
+
 export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
   ({ onRFTraceComplete, activeBand: propBand = 'all' }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
@@ -161,16 +163,16 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
         explodeAnimIdRef.current = null;
       }
 
+      // Proportional vertical separation offsets for antenna layers ONLY
       const targetOffsets: { [key: string]: number } = exploded
         ? {
-            lamination: 0.55,
-            cstPlane: 0.40,
-            uhf: 0.40,
-            lband: 0.40,
-            feed: 0.40,
-            rogers: 0.24,
-            amc: 0.10,
-            shell: 0,
+            lamination: 0.45,
+            cstPlane: 0.30,
+            uhf: 0.30,
+            lband: 0.30,
+            feed: 0.30,
+            rogers: 0.18,
+            amc: 0.08,
           }
         : {
             lamination: 0,
@@ -180,14 +182,13 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
             feed: 0,
             rogers: 0,
             amc: 0,
-            shell: 0,
           };
 
-      const duration = 600;
+      const duration = 550;
       const startTime = performance.now();
       const startPositions: { [key: string]: number } = {};
 
-      Object.keys(targetOffsets).forEach((key) => {
+      ANTENNA_LAYER_KEYS.forEach((key) => {
         if (layers[key]) {
           startPositions[key] = layers[key].position.y;
         }
@@ -198,10 +199,10 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
         const progress = Math.min(elapsed / duration, 1);
         const ease = 1 - Math.pow(1 - progress, 3);
 
-        Object.keys(targetOffsets).forEach((key) => {
+        ANTENNA_LAYER_KEYS.forEach((key) => {
           if (layers[key]) {
             const start = startPositions[key] ?? 0;
-            const target = targetOffsets[key];
+            const target = targetOffsets[key] ?? 0;
             layers[key].position.y = start + (target - start) * ease;
           }
         });
@@ -209,10 +210,9 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
         if (progress < 1) {
           explodeAnimIdRef.current = requestAnimationFrame(animateExplode);
         } else {
-          // Snap strictly to targets on completion
-          Object.keys(targetOffsets).forEach((key) => {
+          ANTENNA_LAYER_KEYS.forEach((key) => {
             if (layers[key]) {
-              layers[key].position.y = targetOffsets[key];
+              layers[key].position.y = targetOffsets[key] ?? 0;
             }
           });
           explodeAnimIdRef.current = null;
@@ -274,9 +274,9 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
         explodeAnimIdRef.current = null;
       }
 
-      // 2. Unconditionally snap all layer offsets back to 0 (completely flush)
+      // 2. Snap only antenna layer offsets back to 0 (completely flush on helmet)
       const layers = layersRef.current;
-      ['lamination', 'cstPlane', 'uhf', 'lband', 'feed', 'rogers', 'amc', 'shell'].forEach((key) => {
+      ANTENNA_LAYER_KEYS.forEach((key) => {
         if (layers[key]) {
           layers[key].position.y = 0;
         }
@@ -436,7 +436,7 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
       helmetGroupRef.current = helmetGroup;
       scene.add(helmetGroup);
 
-      // High-precision mathematical crown height formula (fit within 2mm of helmet geometry)
+      // Mathematical crown height fallback function
       const getCrownY = (x: number, z: number, layerOffset: number = 0) => {
         const x2 = x * x;
         const z2 = z * z;
@@ -480,14 +480,14 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
       const antennaGroup = new THREE.Group();
       antennaGroup.name = 'conformalAntenna';
 
-      // Layer 1: AMC Ground Plane (Flush on top dome, offset = 0.006)
+      // Layer 1: AMC Ground Plane (Flush on top dome, offset = 0.005)
       const amcMat = new THREE.MeshStandardMaterial({
         color: 0x1e293b,
         metalness: 0.85,
         roughness: 0.3,
         side: THREE.DoubleSide,
       });
-      const amcGeo = createConformalPlane(-0.55, 0.55, -0.28, 0.24, 28, 16, 0.006);
+      const amcGeo = createConformalPlane(-0.55, 0.55, -0.28, 0.24, 28, 16, 0.005);
       const amcMesh = new THREE.Mesh(amcGeo, amcMat);
       amcMesh.castShadow = true;
       layersRef.current['amc'] = amcMesh;
@@ -503,7 +503,7 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
       const amcGrid = new THREE.Mesh(amcGeo, amcGridMat);
       amcMesh.add(amcGrid);
 
-      // Layer 2: Rogers RT/duroid 5880 Substrate Plate (Offset = 0.012)
+      // Layer 2: Rogers RT/duroid 5880 Substrate Plate (Offset = 0.010)
       const rogersMat = new THREE.MeshStandardMaterial({
         color: 0x1d4ed8,
         roughness: 0.25,
@@ -512,7 +512,7 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
         opacity: 0.72,
         side: THREE.DoubleSide,
       });
-      const rogersGeo = createConformalPlane(-0.53, 0.53, -0.26, 0.22, 28, 16, 0.012);
+      const rogersGeo = createConformalPlane(-0.53, 0.53, -0.26, 0.22, 28, 16, 0.010);
       const rogersMesh = new THREE.Mesh(rogersGeo, rogersMat);
       rogersMesh.castShadow = true;
       layersRef.current['rogers'] = rogersMesh;
@@ -544,7 +544,7 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
         }
       );
 
-      const cstBoardGeo = createConformalPlane(-0.51, 0.51, -0.24, 0.20, 28, 16, 0.016);
+      const cstBoardGeo = createConformalPlane(-0.51, 0.51, -0.24, 0.20, 28, 16, 0.014);
       const cstBoardMesh = new THREE.Mesh(cstBoardGeo, cstPlaneMat);
       cstBoardMesh.castShadow = true;
       layersRef.current['cstPlane'] = cstBoardMesh;
@@ -559,7 +559,7 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
         emissiveIntensity: 0.2,
         side: THREE.DoubleSide,
       });
-      const uhfGeo = createConformalPlane(-0.46, -0.06, -0.065, 0.065, 18, 10, 0.019);
+      const uhfGeo = createConformalPlane(-0.46, -0.06, -0.065, 0.065, 18, 10, 0.017);
       const uhfMesh = new THREE.Mesh(uhfGeo, uhfMat);
       uhfMesh.castShadow = true;
       layersRef.current['uhf'] = uhfMesh;
@@ -574,7 +574,7 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
         emissiveIntensity: 0.2,
         side: THREE.DoubleSide,
       });
-      const lbandGeo = createConformalPlane(0.14, 0.44, -0.18, 0.18, 18, 18, 0.019);
+      const lbandGeo = createConformalPlane(0.14, 0.44, -0.18, 0.18, 18, 18, 0.017);
       const lbandMesh = new THREE.Mesh(lbandGeo, lbandMat);
       lbandMesh.castShadow = true;
       layersRef.current['lband'] = lbandMesh;
@@ -587,12 +587,12 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
         roughness: 0.2,
         side: THREE.DoubleSide,
       });
-      const feedGeo = createConformalPlane(-0.06, 0.14, -0.010, 0.010, 8, 4, 0.019);
+      const feedGeo = createConformalPlane(-0.06, 0.14, -0.010, 0.010, 8, 4, 0.017);
       const feedMesh = new THREE.Mesh(feedGeo, feedMat);
       feedMesh.castShadow = true;
 
       const smdMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.8, roughness: 0.25 });
-      const smdGeo = createConformalPlane(-0.012, 0.040, -0.020, 0.020, 4, 4, 0.022);
+      const smdGeo = createConformalPlane(-0.012, 0.040, -0.020, 0.020, 4, 4, 0.020);
       const smdMesh = new THREE.Mesh(smdGeo, smdMat);
 
       const feedGroup = new THREE.Group();
@@ -601,7 +601,7 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
       layersRef.current['feed'] = feedGroup;
       antennaGroup.add(feedGroup);
 
-      // Layer 4: Conformal Protective Radome Lamination (Offset = 0.024)
+      // Layer 4: Conformal Protective Radome Lamination (Offset = 0.022)
       const lamMat = new THREE.MeshStandardMaterial({
         color: 0xf8fafc,
         roughness: 0.08,
@@ -610,7 +610,7 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
         opacity: 0.26,
         side: THREE.DoubleSide,
       });
-      const lamGeo = createConformalPlane(-0.55, 0.55, -0.28, 0.24, 28, 16, 0.024);
+      const lamGeo = createConformalPlane(-0.55, 0.55, -0.28, 0.24, 28, 16, 0.022);
       const lamMesh = new THREE.Mesh(lamGeo, lamMat);
       layersRef.current['lamination'] = lamMesh;
       antennaGroup.add(lamMesh);
@@ -635,7 +635,6 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
       const coaxMesh = new THREE.Mesh(coaxGeo, coaxMat);
       coaxMesh.castShadow = true;
       helmetGroup.add(coaxMesh);
-      layersRef.current['coax'] = coaxMesh;
 
       // Tactical Cable Retention Clips
       const clipMat = new THREE.MeshStandardMaterial({ color: 0x27272a, roughness: 0.6, metalness: 0.4 });
@@ -669,7 +668,6 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
 
       connectorGroup.position.set(0, 0.92, -1.36);
       helmetGroup.add(connectorGroup);
-      layersRef.current['connector'] = connectorGroup;
 
       // 8. RF Pulse Tracer
       const pulseGeo = new THREE.SphereGeometry(0.040, 16, 16);
@@ -730,7 +728,6 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
         shellMesh.castShadow = true;
         shellMesh.receiveShadow = true;
         helmetGroup.add(shellMesh);
-        layersRef.current['shell'] = shellMesh;
       };
 
       // 10. Load 3D GLTF Model (/scene-v1.glb)
@@ -778,17 +775,16 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
           });
 
           // Conform all antenna layers directly to helmet shell surface
-          conformGeometryToHelmet(amcGeo, model, 0.006);
-          conformGeometryToHelmet(rogersGeo, model, 0.012);
-          conformGeometryToHelmet(cstBoardGeo, model, 0.016);
-          conformGeometryToHelmet(uhfGeo, model, 0.019);
-          conformGeometryToHelmet(lbandGeo, model, 0.019);
-          conformGeometryToHelmet(feedGeo, model, 0.019);
-          conformGeometryToHelmet(smdGeo, model, 0.022);
-          conformGeometryToHelmet(lamGeo, model, 0.024);
+          conformGeometryToHelmet(amcGeo, model, 0.005);
+          conformGeometryToHelmet(rogersGeo, model, 0.010);
+          conformGeometryToHelmet(cstBoardGeo, model, 0.014);
+          conformGeometryToHelmet(uhfGeo, model, 0.017);
+          conformGeometryToHelmet(lbandGeo, model, 0.017);
+          conformGeometryToHelmet(feedGeo, model, 0.017);
+          conformGeometryToHelmet(smdGeo, model, 0.020);
+          conformGeometryToHelmet(lamGeo, model, 0.022);
 
           helmetGroup.add(model);
-          layersRef.current['shell'] = model;
 
           if (controls) {
             controls.target.set(0, 1.6, 0);
