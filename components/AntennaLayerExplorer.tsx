@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { Layers, ArrowUp, RefreshCw } from 'lucide-react';
 import { HelmetViewerHandle } from './HelmetViewer';
 
 interface AntennaLayerExplorerProps {
@@ -55,11 +56,20 @@ const layerDetails: Record<string, LayerData> = {
 
 export const AntennaLayerExplorer: React.FC<AntennaLayerExplorerProps> = ({ viewerRef }) => {
   const [selectedLayer, setSelectedLayer] = useState<string>('rogers');
+  const [isExploded, setIsExploded] = useState<boolean>(false);
 
   const handleSelectLayer = (key: string) => {
     setSelectedLayer(key);
+    setIsExploded(true);
     if (viewerRef?.current) {
       viewerRef.current.setExploded(true);
+    }
+  };
+
+  const handleToggleExplode = (explode: boolean) => {
+    setIsExploded(explode);
+    if (viewerRef?.current) {
+      viewerRef.current.setExploded(explode);
     }
   };
 
@@ -79,6 +89,23 @@ export const AntennaLayerExplorer: React.FC<AntennaLayerExplorerProps> = ({ view
             <p className="text-slate-600 text-sm mt-1">
               Explore the multi-layer dielectric, conductive, and metamaterial assembly engineered to adhere to the compound helmet curve.
             </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => handleToggleExplode(!isExploded)}
+              className="btn-tech text-xs flex items-center gap-1.5"
+            >
+              <Layers className="w-3.5 h-3.5 text-sky-600" />
+              <span>{isExploded ? 'COLLAPSE TO FLUSH MOUNT' : 'EXPLODE 3D LAYERS'}</span>
+            </button>
+            <a
+              href="#hero"
+              className="btn-tech btn-tech-primary text-xs flex items-center gap-1.5"
+            >
+              <ArrowUp className="w-3.5 h-3.5" />
+              <span>VIEW 3D HELMET</span>
+            </a>
           </div>
         </div>
 
@@ -232,6 +259,24 @@ export const AntennaLayerExplorer: React.FC<AntennaLayerExplorerProps> = ({ view
                 <div id="layer-detail-spec" className="text-slate-800 font-semibold leading-relaxed">
                   {current.spec}
                 </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-4 border-t border-borderlight">
+                <button
+                  onClick={() => handleToggleExplode(!isExploded)}
+                  className="btn-tech text-xs flex items-center gap-1.5"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>{isExploded ? 'Reset to Flush Mount' : 'Explode in 3D Viewer'}</span>
+                </button>
+
+                <a
+                  href="#hero"
+                  className="btn-tech btn-tech-primary text-xs flex items-center gap-1.5"
+                >
+                  <ArrowUp className="w-3.5 h-3.5" />
+                  <span>Inspect 3D Helmet View</span>
+                </a>
               </div>
             </div>
           </div>

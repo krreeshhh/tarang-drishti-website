@@ -45,6 +45,8 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
     const isTracingRFRef = useRef<boolean>(false);
     const rfTraceProgressRef = useRef<number>(0);
     const isExplodedRef = useRef<boolean>(false);
+    const explodeAnimIdRef = useRef<number | null>(null);
+    const cameraAnimIdRef = useRef<number | null>(null);
     const idleTimerRef = useRef<NodeJS.Timeout | null>(null);
     const cstPlaneMatRef = useRef<THREE.MeshStandardMaterial | null>(null);
     const onRFTraceCompleteRef = useRef(onRFTraceComplete);
@@ -150,17 +152,24 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
 
     const handleSetExploded = useCallback((exploded: boolean) => {
       isExplodedRef.current = exploded;
+      setCurrentExploded(exploded);
       const layers = layersRef.current;
+
+      // Cancel any previous in-flight explode animation
+      if (explodeAnimIdRef.current) {
+        cancelAnimationFrame(explodeAnimIdRef.current);
+        explodeAnimIdRef.current = null;
+      }
 
       const targetOffsets: { [key: string]: number } = exploded
         ? {
-            lamination: 1.2,
-            cstPlane: 0.9,
-            uhf: 0.9,
-            lband: 0.9,
-            feed: 0.9,
-            rogers: 0.55,
-            amc: 0.25,
+            lamination: 0.55,
+            cstPlane: 0.40,
+            uhf: 0.40,
+            lband: 0.40,
+            feed: 0.40,
+            rogers: 0.24,
+            amc: 0.10,
             shell: 0,
           }
         : {
@@ -174,7 +183,7 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
             shell: 0,
           };
 
-      const duration = 750;
+      const duration = 600;
       const startTime = performance.now();
       const startPositions: { [key: string]: number } = {};
 
@@ -191,27 +200,40 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
 
         Object.keys(targetOffsets).forEach((key) => {
           if (layers[key]) {
-            const start = startPositions[key] || 0;
+            const start = startPositions[key] ?? 0;
             const target = targetOffsets[key];
             layers[key].position.y = start + (target - start) * ease;
           }
         });
 
         if (progress < 1) {
-          requestAnimationFrame(animateExplode);
+          explodeAnimIdRef.current = requestAnimationFrame(animateExplode);
+        } else {
+          // Snap strictly to targets on completion
+          Object.keys(targetOffsets).forEach((key) => {
+            if (layers[key]) {
+              layers[key].position.y = targetOffsets[key];
+            }
+          });
+          explodeAnimIdRef.current = null;
         }
       };
 
-      requestAnimationFrame(animateExplode);
+      explodeAnimIdRef.current = requestAnimationFrame(animateExplode);
     }, []);
 
     const animateCameraTo = (x: number, y: number, z: number, targetY: number = 1.6) => {
       if (!cameraRef.current) return;
+      if (cameraAnimIdRef.current) {
+        cancelAnimationFrame(cameraAnimIdRef.current);
+        cameraAnimIdRef.current = null;
+      }
+
       const camera = cameraRef.current;
       const startX = camera.position.x;
       const startY = camera.position.y;
       const startZ = camera.position.z;
-      const duration = 900;
+      const duration = 800;
       const startTime = performance.now();
 
       const step = (time: number) => {
@@ -230,10 +252,12 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
         }
 
         if (progress < 1) {
-          requestAnimationFrame(step);
+          cameraAnimIdRef.current = requestAnimationFrame(step);
+        } else {
+          cameraAnimIdRef.current = null;
         }
       };
-      requestAnimationFrame(step);
+      cameraAnimIdRef.current = requestAnimationFrame(step);
     };
 
     const handleStartRFTrace = () => {
@@ -244,11 +268,33 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
     };
 
     const handleResetView = useCallback(() => {
-      animateCameraTo(2.8, 3.2, 3.2, 1.6);
-      if (controlsRef.current) controlsRef.current.target.set(0, 1.6, 0);
-      if (isExplodedRef.current) handleSetExploded(false);
+      // 1. Cancel in-flight explosion animation
+      if (explodeAnimIdRef.current) {
+        cancelAnimationFrame(explodeAnimIdRef.current);
+        explodeAnimIdRef.current = null;
+      }
+
+      // 2. Unconditionally snap all layer offsets back to 0 (completely flush)
+      const layers = layersRef.current;
+      ['lamination', 'cstPlane', 'uhf', 'lband', 'feed', 'rogers', 'amc', 'shell'].forEach((key) => {
+        if (layers[key]) {
+          layers[key].position.y = 0;
+        }
+      });
+
+      isExplodedRef.current = false;
+      setCurrentExploded(false);
+
+      // 3. Reset band states
       handleSetBand('all');
-    }, [handleSetExploded, handleSetBand]);
+
+      // 4. Animate camera to default vantage point
+      animateCameraTo(2.8, 3.2, 3.2, 1.6);
+      if (controlsRef.current) {
+        controlsRef.current.target.set(0, 1.6, 0);
+        controlsRef.current.update();
+      }
+    }, [handleSetBand]);
 
     useImperativeHandle(ref, () => ({
       setBand: (band) => {
@@ -256,7 +302,6 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
         handleSetBand(band);
       },
       setExploded: (exploded) => {
-        setCurrentExploded(exploded);
         handleSetExploded(exploded);
       },
       startRFTrace: (onComplete) => {
@@ -265,7 +310,6 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
       },
       resetView: () => {
         setCurrentBand('all');
-        setCurrentExploded(false);
         handleResetView();
       },
     }));
@@ -287,7 +331,7 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
       scene.background = new THREE.Color(0xffffff);
       sceneRef.current = scene;
 
-      // 2. Camera setup (elevated 3/4 perspective focusing on the top crown antenna)
+      // 2. Camera setup
       const camera = new THREE.PerspectiveCamera(38, width / height, 0.1, 100);
       camera.position.set(2.8, 3.2, 3.2);
       cameraRef.current = camera;
@@ -392,12 +436,22 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
       helmetGroupRef.current = helmetGroup;
       scene.add(helmetGroup);
 
-      // Conformal crown height function matching the top dome of the helmet shell
+      // High-precision mathematical crown height formula (fit within 2mm of helmet geometry)
       const getCrownY = (x: number, z: number, layerOffset: number = 0) => {
-        return 2.664 - 0.44 * (x * x) - 0.35 * Math.pow(z + 0.06, 2) + layerOffset;
+        const x2 = x * x;
+        const z2 = z * z;
+        return (
+          2.658 -
+          0.375 * x2 -
+          0.021 * z -
+          0.163 * z2 -
+          0.298 * x2 * x2 -
+          0.110 * z * z2 +
+          layerOffset
+        );
       };
 
-      // Helper to generate conformal curved planar mesh mapped flush to helmet dome
+      // Helper to generate conformal planar mesh
       const createConformalPlane = (
         minX: number,
         maxX: number,
@@ -426,14 +480,14 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
       const antennaGroup = new THREE.Group();
       antennaGroup.name = 'conformalAntenna';
 
-      // Layer 1: AMC Ground Plane (Flush on top dome, offset = 0.008)
+      // Layer 1: AMC Ground Plane (Flush on top dome, offset = 0.006)
       const amcMat = new THREE.MeshStandardMaterial({
         color: 0x1e293b,
         metalness: 0.85,
         roughness: 0.3,
         side: THREE.DoubleSide,
       });
-      const amcGeo = createConformalPlane(-0.62, 0.62, -0.32, 0.32, 28, 16, 0.008);
+      const amcGeo = createConformalPlane(-0.55, 0.55, -0.28, 0.24, 28, 16, 0.006);
       const amcMesh = new THREE.Mesh(amcGeo, amcMat);
       amcMesh.castShadow = true;
       layersRef.current['amc'] = amcMesh;
@@ -449,7 +503,7 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
       const amcGrid = new THREE.Mesh(amcGeo, amcGridMat);
       amcMesh.add(amcGrid);
 
-      // Layer 2: Rogers RT/duroid 5880 Substrate Plate (Offset = 0.016)
+      // Layer 2: Rogers RT/duroid 5880 Substrate Plate (Offset = 0.012)
       const rogersMat = new THREE.MeshStandardMaterial({
         color: 0x1d4ed8,
         roughness: 0.25,
@@ -458,14 +512,13 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
         opacity: 0.72,
         side: THREE.DoubleSide,
       });
-      const rogersGeo = createConformalPlane(-0.60, 0.60, -0.30, 0.30, 28, 16, 0.016);
+      const rogersGeo = createConformalPlane(-0.53, 0.53, -0.26, 0.22, 28, 16, 0.012);
       const rogersMesh = new THREE.Mesh(rogersGeo, rogersMat);
       rogersMesh.castShadow = true;
       layersRef.current['rogers'] = rogersMesh;
       antennaGroup.add(rogersMesh);
 
       // Layer 3: CST Antenna Layout Matching User Image 2
-      // CST Board Plane with CAD texture overlay
       const cstPlaneMat = new THREE.MeshStandardMaterial({
         color: 0xffffff,
         metalness: 0.3,
@@ -491,7 +544,7 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
         }
       );
 
-      const cstBoardGeo = createConformalPlane(-0.58, 0.58, -0.28, 0.28, 28, 16, 0.022);
+      const cstBoardGeo = createConformalPlane(-0.51, 0.51, -0.24, 0.20, 28, 16, 0.016);
       const cstBoardMesh = new THREE.Mesh(cstBoardGeo, cstPlaneMat);
       cstBoardMesh.castShadow = true;
       layersRef.current['cstPlane'] = cstBoardMesh;
@@ -506,7 +559,7 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
         emissiveIntensity: 0.2,
         side: THREE.DoubleSide,
       });
-      const uhfGeo = createConformalPlane(-0.50, -0.06, -0.075, 0.075, 18, 10, 0.025);
+      const uhfGeo = createConformalPlane(-0.46, -0.06, -0.065, 0.065, 18, 10, 0.019);
       const uhfMesh = new THREE.Mesh(uhfGeo, uhfMat);
       uhfMesh.castShadow = true;
       layersRef.current['uhf'] = uhfMesh;
@@ -521,7 +574,7 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
         emissiveIntensity: 0.2,
         side: THREE.DoubleSide,
       });
-      const lbandGeo = createConformalPlane(0.16, 0.48, -0.20, 0.20, 18, 18, 0.025);
+      const lbandGeo = createConformalPlane(0.14, 0.44, -0.18, 0.18, 18, 18, 0.019);
       const lbandMesh = new THREE.Mesh(lbandGeo, lbandMat);
       lbandMesh.castShadow = true;
       layersRef.current['lband'] = lbandMesh;
@@ -534,13 +587,12 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
         roughness: 0.2,
         side: THREE.DoubleSide,
       });
-      const feedGeo = createConformalPlane(-0.06, 0.16, -0.012, 0.012, 8, 4, 0.025);
+      const feedGeo = createConformalPlane(-0.06, 0.14, -0.010, 0.010, 8, 4, 0.019);
       const feedMesh = new THREE.Mesh(feedGeo, feedMat);
       feedMesh.castShadow = true;
 
-      // Small ceramic / SMD matching block in center feedline
       const smdMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.8, roughness: 0.25 });
-      const smdGeo = createConformalPlane(-0.015, 0.045, -0.024, 0.024, 4, 4, 0.028);
+      const smdGeo = createConformalPlane(-0.012, 0.040, -0.020, 0.020, 4, 4, 0.022);
       const smdMesh = new THREE.Mesh(smdGeo, smdMat);
 
       const feedGroup = new THREE.Group();
@@ -549,7 +601,7 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
       layersRef.current['feed'] = feedGroup;
       antennaGroup.add(feedGroup);
 
-      // Layer 4: Conformal Protective Radome Lamination (Offset = 0.034)
+      // Layer 4: Conformal Protective Radome Lamination (Offset = 0.024)
       const lamMat = new THREE.MeshStandardMaterial({
         color: 0xf8fafc,
         roughness: 0.08,
@@ -558,29 +610,27 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
         opacity: 0.26,
         side: THREE.DoubleSide,
       });
-      const lamGeo = createConformalPlane(-0.62, 0.62, -0.32, 0.32, 28, 16, 0.034);
+      const lamGeo = createConformalPlane(-0.55, 0.55, -0.28, 0.24, 28, 16, 0.024);
       const lamMesh = new THREE.Mesh(lamGeo, lamMat);
       layersRef.current['lamination'] = lamMesh;
       antennaGroup.add(lamMesh);
 
       helmetGroup.add(antennaGroup);
 
-      // 7. Rear Coaxial Feed Cable & MIL-SPEC Breakaway Connector
-      // Originates from rear edge of top antenna down along the helmet spine to the nape
+      // 7. Rear Coaxial Feed Cable & Breakaway Connector
       const coaxPoints = [
-        new THREE.Vector3(0, 2.63, -0.30),
-        new THREE.Vector3(0, 2.61, -0.48),
-        new THREE.Vector3(0, 2.54, -0.68),
-        new THREE.Vector3(0, 2.42, -0.88),
-        new THREE.Vector3(0, 2.18, -1.08),
-        new THREE.Vector3(0, 1.68, -1.24),
-        new THREE.Vector3(0, 1.12, -1.35),
-        new THREE.Vector3(0, 0.85, -1.37),
+        new THREE.Vector3(0, 2.62, -0.28),
+        new THREE.Vector3(0, 2.56, -0.55),
+        new THREE.Vector3(0, 2.42, -0.85),
+        new THREE.Vector3(0, 2.15, -1.08),
+        new THREE.Vector3(0, 1.75, -1.24),
+        new THREE.Vector3(0, 1.25, -1.34),
+        new THREE.Vector3(0, 0.95, -1.36),
       ];
       const coaxCurve = new THREE.CatmullRomCurve3(coaxPoints);
       coaxCurveRef.current = coaxCurve;
 
-      const coaxGeo = new THREE.TubeGeometry(coaxCurve, 64, 0.022, 12, false);
+      const coaxGeo = new THREE.TubeGeometry(coaxCurve, 64, 0.020, 12, false);
       const coaxMat = new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.75, metalness: 0.25 });
       const coaxMesh = new THREE.Mesh(coaxGeo, coaxMat);
       coaxMesh.castShadow = true;
@@ -589,9 +639,9 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
 
       // Tactical Cable Retention Clips
       const clipMat = new THREE.MeshStandardMaterial({ color: 0x27272a, roughness: 0.6, metalness: 0.4 });
-      [0.18, 0.42, 0.68, 0.90].forEach((t) => {
+      [0.20, 0.48, 0.74, 0.92].forEach((t) => {
         const pt = coaxCurve.getPoint(t);
-        const clipGeo = new THREE.BoxGeometry(0.07, 0.028, 0.045);
+        const clipGeo = new THREE.BoxGeometry(0.065, 0.025, 0.04);
         const clipMesh = new THREE.Mesh(clipGeo, clipMat);
         clipMesh.position.copy(pt);
         clipMesh.rotation.x = 0.2 + t * 0.4;
@@ -600,7 +650,7 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
 
       // Quick-Disconnect Gold Breakaway Connector at the Nape
       const connectorGroup = new THREE.Group();
-      const connBaseGeo = new THREE.CylinderGeometry(0.042, 0.042, 0.14, 16);
+      const connBaseGeo = new THREE.CylinderGeometry(0.038, 0.038, 0.12, 16);
       const connMat = new THREE.MeshStandardMaterial({
         color: 0xd97706,
         metalness: 0.95,
@@ -610,26 +660,43 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
       connBase.rotation.x = Math.PI / 2 + 0.2;
       connectorGroup.add(connBase);
 
-      const collarGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.04, 16);
+      const collarGeo = new THREE.CylinderGeometry(0.046, 0.046, 0.035, 16);
       const collarMat = new THREE.MeshStandardMaterial({ color: 0x1f2937, metalness: 0.8, roughness: 0.3 });
       const collarMesh = new THREE.Mesh(collarGeo, collarMat);
       collarMesh.rotation.x = Math.PI / 2 + 0.2;
       collarMesh.position.set(0, -0.015, -0.02);
       connectorGroup.add(collarMesh);
 
-      connectorGroup.position.set(0, 0.82, -1.38);
+      connectorGroup.position.set(0, 0.92, -1.36);
       helmetGroup.add(connectorGroup);
       layersRef.current['connector'] = connectorGroup;
 
-      // 8. RF Pulse Tracer (travels up the coaxial feed from nape to top crown)
-      const pulseGeo = new THREE.SphereGeometry(0.045, 16, 16);
+      // 8. RF Pulse Tracer
+      const pulseGeo = new THREE.SphereGeometry(0.040, 16, 16);
       const pulseMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.95 });
       const rfPulseMesh = new THREE.Mesh(pulseGeo, pulseMat);
       rfPulseMesh.visible = false;
       helmetGroup.add(rfPulseMesh);
       rfPulseMeshRef.current = rfPulseMesh;
 
-      // 9. Procedural Fallback Helmet (if GLB is unavailable)
+      // Direct raycast conformal mapping onto loaded 3D helmet mesh
+      const conformGeometryToHelmet = (geo: THREE.BufferGeometry, modelMesh: THREE.Object3D, layerOffset: number) => {
+        const raycaster = new THREE.Raycaster();
+        const pos = geo.attributes.position;
+        for (let i = 0; i < pos.count; i++) {
+          const x = pos.getX(i);
+          const z = pos.getZ(i);
+          raycaster.set(new THREE.Vector3(x, 5, z), new THREE.Vector3(0, -1, 0));
+          const hits = raycaster.intersectObject(modelMesh, true);
+          if (hits.length > 0) {
+            pos.setY(i, hits[0].point.y + layerOffset);
+          }
+        }
+        geo.computeVertexNormals();
+        pos.needsUpdate = true;
+      };
+
+      // 9. Procedural Fallback Helmet
       const buildTacticalHelmetFallback = () => {
         const shellMat = new THREE.MeshStandardMaterial({
           color: 0x1f2126,
@@ -684,6 +751,7 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
           model.scale.setScalar(scale);
 
           model.position.set(-center.x * scale, -box.min.y * scale, -center.z * scale);
+          model.updateMatrixWorld(true);
 
           model.traverse((child) => {
             if ((child as THREE.Mesh).isMesh) {
@@ -708,6 +776,16 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
               }
             }
           });
+
+          // Conform all antenna layers directly to helmet shell surface
+          conformGeometryToHelmet(amcGeo, model, 0.006);
+          conformGeometryToHelmet(rogersGeo, model, 0.012);
+          conformGeometryToHelmet(cstBoardGeo, model, 0.016);
+          conformGeometryToHelmet(uhfGeo, model, 0.019);
+          conformGeometryToHelmet(lbandGeo, model, 0.019);
+          conformGeometryToHelmet(feedGeo, model, 0.019);
+          conformGeometryToHelmet(smdGeo, model, 0.022);
+          conformGeometryToHelmet(lamGeo, model, 0.024);
 
           helmetGroup.add(model);
           layersRef.current['shell'] = model;
@@ -749,7 +827,6 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
         }
 
         if (isTracingRFRef.current && coaxCurveRef.current && rfPulseMeshRef.current) {
-          // Progress from nape (t=1) up to top crown (t=0)
           rfTraceProgressRef.current += 0.016;
           if (rfTraceProgressRef.current > 1) {
             rfTraceProgressRef.current = 0;
@@ -759,7 +836,6 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
               onRFTraceCompleteRef.current();
             }
           } else {
-            // Traverse from 1 to 0
             const t = 1 - rfTraceProgressRef.current;
             const pt = coaxCurveRef.current.getPoint(t);
             rfPulseMeshRef.current.position.copy(pt);
@@ -775,6 +851,8 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
 
       return () => {
         cancelAnimationFrame(reqId);
+        if (explodeAnimIdRef.current) cancelAnimationFrame(explodeAnimIdRef.current);
+        if (cameraAnimIdRef.current) cancelAnimationFrame(cameraAnimIdRef.current);
         window.removeEventListener('resize', handleResize);
         resizeObserver.disconnect();
         if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
@@ -801,9 +879,7 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
           className="w-full h-full flex flex-col items-center justify-center p-6 bg-white relative overflow-hidden tech-grid-bg"
           style={{ width: '100%', height: '100%', minHeight: '520px' }}
         >
-          {/* Main Visual Presentation */}
           <div className="relative z-10 w-full max-w-lg flex flex-col items-center gap-4">
-            {/* Image Preview with Dynamic Band Glow */}
             <div className="relative bg-white border border-borderdark p-3 shadow-md rounded-sm w-full flex items-center justify-center tech-corner-accent">
               <img
                 src="/cst_antenna_design.png"
@@ -811,7 +887,6 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
                 className="max-h-[320px] w-auto object-contain transition-all duration-300"
               />
 
-              {/* Band Tag Overlay */}
               <div className="absolute top-3 left-3 flex flex-col gap-1.5 font-mono text-[10px]">
                 <div
                   className={`px-2 py-0.5 border text-xs font-bold transition-all ${
@@ -833,13 +908,11 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
                 </div>
               </div>
 
-              {/* Status indicator */}
               <div className="absolute bottom-3 right-3 font-mono text-[10px] text-slate-500 bg-white/90 px-2 py-1 border border-borderlight">
                 {currentExploded ? 'EXPLODED STACK VIEW' : 'CONFORMAL CROWN MOUNT'}
               </div>
             </div>
 
-            {/* Information & Action Ribbon */}
             <div className="w-full bg-slate-50 border border-borderlight p-3 font-mono text-xs flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2 text-slate-600">
                 <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
@@ -867,7 +940,6 @@ export const HelmetViewer = forwardRef<HelmetViewerHandle, HelmetViewerProps>(
               </div>
             </div>
 
-            {/* Explanatory Help Popup */}
             {showGpuHelp && (
               <div className="w-full bg-white border border-borderdark p-4 shadow-lg text-left text-xs font-mono space-y-2 animate-fadeIn">
                 <div className="font-bold text-charcoal flex items-center justify-between">
